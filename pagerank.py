@@ -13,16 +13,32 @@ connections = []
 disallowed_sites = []
 robots_url = "robots.txt"
 
-max_depth = 5
+depth = 0
 top_n_nodes = 5
 
 np.set_printoptions(threshold=sys.maxsize)
 
+
 def branch(site, current_depth = 0):
 
     #check robots.txt
+    
+    try:
+        robots_response = requests.get(site + robots_url, timeout=5)
+        robots_response.raise_for_status()
 
-    robots_response = (requests.get(site + robots_url).text).split("\n\n")  #get robots.txt text, and split into user-agent sections
+    except requests.exceptions.Timeout:
+        print("Request timed out from site ", site)
+        disallowed_sites.append(site)
+        return
+    
+    except requests.exceptions.RequestException as e:   #what about sites that don't have robots.txt?
+        print(f"An error occurred when connecting to ", site, " :", e)
+        disallowed_sites.append(site)
+        return
+        
+
+    robots_response = robots_response.text.split("\n\n")  #get robots.txt text, and split into user-agent sections
 
     for user_agent_section in robots_response:
 
@@ -44,11 +60,16 @@ def branch(site, current_depth = 0):
 
     response = requests.get(site).text              #get response from site
 
+
     soup = BeautifulSoup(response, 'html.parser')   #parse response
 
     for link in soup.find_all('a', attrs={'href': re.compile("^https://")}):    #find all a href tags
 
-        link_url = link.get('href').split("/")
+        link_url = link.get('href').replace("?", "/").split("/")
+        
+        # if (len(link_url) < 3 or link_url[2] == ""):
+        #     continue
+
         formatted_url = ("/".join(link_url[:3]) + "/").replace("www.", "")      #format url (remove www., keep everything up until (and including) top-level domain)
 
         available_urls.append(formatted_url)
@@ -68,7 +89,7 @@ def branch(site, current_depth = 0):
     for next_site in available_urls:
 
         #if the next site hasn't been visited before, and it's not on the list of disallowed sites, and if the current depth is within the limit
-        if next_site not in nodes and next_site not in disallowed_sites and current_depth < max_depth:
+        if next_site not in nodes and next_site not in disallowed_sites and current_depth < depth:
 
             #continue crawling to next site
             branch(next_site, current_depth + 1) 
@@ -79,26 +100,26 @@ def build_matrix():
     global nodes
     global connections
 
-    nodes = ['https://google.com/', 'https://maps.google.si/', 'https://play.google.com/', 'https://youtube.com/', 'https://google.si/', 
-                    'https://accounts.google.com/']
+    # nodes = ['https://google.com/', 'https://maps.google.si/', 'https://play.google.com/', 'https://youtube.com/', 'https://google.si/', 
+    #                 'https://accounts.google.com/']
 
-    connections = [['https://google.com/', 'https://maps.google.si/', 'https://play.google.com/', 'https://youtube.com/', 'https://news.google.com/', 
-                  'https://mail.google.com/', 'https://drive.google.com/', 'https://google.si/', 'https://accounts.google.com/', 'https://google.com/'], 
+    # connections = [['https://google.com/', 'https://maps.google.si/', 'https://play.google.com/', 'https://youtube.com/', 'https://news.google.com/', 
+    #               'https://mail.google.com/', 'https://drive.google.com/', 'https://google.si/', 'https://accounts.google.com/', 'https://google.com/'], 
                  
-                 ['https://accounts.google.com/', 'https://accounts.google.com/', 'https://policies.google.com/', 'https://consent.google.si/', 
-                  'https://policies.google.com/', 'https://policies.google.com/'],
+    #              ['https://accounts.google.com/', 'https://accounts.google.com/', 'https://policies.google.com/', 'https://consent.google.si/', 
+    #               'https://policies.google.com/', 'https://policies.google.com/'],
 
-                 ['https://policies.google.com/', 'https://myaccount.google.com/', 'https://play.google.com/', 'https://support.google.com/', 
-                  'https://support.google.com/', 'https://support.google.com/', 'https://play.google.com/', 'https://policies.google.com/', 
-                  'https://support.google.com/', 'https://store.google.com/'], 
+    #              ['https://policies.google.com/', 'https://myaccount.google.com/', 'https://play.google.com/', 'https://support.google.com/', 
+    #               'https://support.google.com/', 'https://support.google.com/', 'https://play.google.com/', 'https://policies.google.com/', 
+    #               'https://support.google.com/', 'https://store.google.com/'], 
 
-                 ['https://youtube.com/', 'https://youtube.com/', 'https://youtube.com/', 'https://youtube.com/', 'https://youtube.com/', 
-                  'https://developers.google.com/', 'https://youtube.com/', 'https://youtube.com/'],
+    #              ['https://youtube.com/', 'https://youtube.com/', 'https://youtube.com/', 'https://youtube.com/', 'https://youtube.com/', 
+    #               'https://developers.google.com/', 'https://youtube.com/', 'https://youtube.com/'],
 
-                 ['https://google.si/', 'https://maps.google.si/', 'https://play.google.com/', 'https://youtube.com/', 'https://news.google.com/', 
-                  'https://mail.google.com/', 'https://drive.google.com/', 'https://google.si/', 'https://accounts.google.com/', 'https://google.si/'],
+    #              ['https://google.si/', 'https://maps.google.si/', 'https://play.google.com/', 'https://youtube.com/', 'https://news.google.com/', 
+    #               'https://mail.google.com/', 'https://drive.google.com/', 'https://google.si/', 'https://accounts.google.com/', 'https://google.si/'],
 
-                 ['https://support.google.com/', 'https://support.google.com/', 'https://accounts.google.com/', 'https://accounts.google.com/']]
+    #              ['https://support.google.com/', 'https://support.google.com/', 'https://accounts.google.com/', 'https://accounts.google.com/']]
 
 
     #add missing nodes to the node list
@@ -132,12 +153,16 @@ def build_matrix():
 
 if __name__ == "__main__":
 
+    while depth < 3 or depth > 6:
+        depth = int(input("Please enter the depth of the algorithm (between 3 and 6): "))
+
     #start crawling
 
     root_url = "https://google.com/"
     # root_url = "https://24ur.com/"
+    # root_url = "https://feri.um.si/"
 
-    # branch(root_url)
+    branch(root_url)
 
 
     #build M and find ranks
@@ -154,7 +179,7 @@ if __name__ == "__main__":
 
     ranks = []
 
-    epsilon = 0.01  #value of convergence
+    epsilon = 0.001  #convergence threshhold
 
     iteration_counter = 0
 
@@ -162,14 +187,17 @@ if __name__ == "__main__":
 
         ranks = A.dot(r0)
 
+        iteration_counter += 1
+
+        print("Iteration ", iteration_counter, ": \n", ranks, "\n")
+
         if (abs(ranks[0] - r0[0]) < epsilon):
             break
 
         r0 = ranks
 
-        iteration_counter += 1
-
-    print("Convergence achieved after ", iteration_counter, " iterations")
+    print("Convergence achieved after ", iteration_counter, " iterations.\n")
+    print("Sum of ranks: ", sum(ranks))
 
 
     #sort by rank
@@ -183,12 +211,14 @@ if __name__ == "__main__":
 
 
     #print the nodes and their ranks
-    print(("{} -> {:.3f}".format(nodes[i], ranks[i])) for i in range(len(nodes)))
+    print("Final ranks: \n")
+    for i in range(len(nodes)):
+        print(("{} -> {:.6f}".format(nodes[i], ranks[i])))
 
 
     #draw the graph
 
-    #drop https:// from unique_sites and seen_urls
+    #format nodes for better graph representation
     for i in range(len(nodes)):
         nodes[i] = nodes[i].removeprefix("https://").removesuffix("/")
 
@@ -200,14 +230,17 @@ if __name__ == "__main__":
     labels = {}
     node_sizes = []
 
-    for i in range(top_n_nodes):  #separate for loop due to the possibility of some url being the predecessor of another, and then later being in the top 5
+    #separated next two for loops due to possibility of some url being the predecessor of another, and ther later appearing in the top top_n_nodes
 
-        print(nodes[i])
+    #add top_n_nodes (sorted by rank), their labels and sizes to graph
+    for i in range(top_n_nodes): 
+
         G.add_node(nodes[i])
         labels[nodes[i]] = "{}\n{:.3f}".format(nodes[i], ranks[i])
         node_sizes.append(ranks[i] * 100000) 
 
-    for i in range(len(nodes[:5])):
+    #add nodes that lead to top_n_nodes, their labels and sizes
+    for i in range(top_n_nodes):
 
         for j in range(len(connections)):
             for k in range(len(connections[j])):
@@ -224,7 +257,12 @@ if __name__ == "__main__":
 
     pos = nx.spring_layout(G, seed = 50, k=5)
 
+    plt.figure(figsize=(20, 10))
     nx.draw(G, pos, ax = None, with_labels = True, labels=labels, font_size = 10, node_size = node_sizes, node_color = 'lightgreen')
-    plt.savefig("fig_{}.png".format(max_depth)) #change maxdepth
+
+    root_url = root_url.removeprefix("https://").removesuffix(".com/")
+    # root_url = root_url.removeprefix("https://").removesuffix(".um.si/")
+
+    plt.savefig("{}_{}.png".format(root_url, depth))
 
 
