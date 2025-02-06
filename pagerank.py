@@ -2,10 +2,8 @@ from bs4 import BeautifulSoup
 import requests
 import re
 import numpy as np
-import sys
 import networkx as nx
 import matplotlib.pyplot as plt
-
 
 nodes = []
 connections = []
@@ -16,27 +14,22 @@ robots_url = "robots.txt"
 depth = 0
 top_n_nodes = 5
 
-np.set_printoptions(threshold=sys.maxsize)
-
-
 def branch(site, current_depth = 0):
 
     #check robots.txt
     
     try:
         robots_response = requests.get(site + robots_url, timeout=5)
-        robots_response.raise_for_status()
 
     except requests.exceptions.Timeout:
         print("Request timed out from site ", site)
         disallowed_sites.append(site)
         return
     
-    except requests.exceptions.RequestException as e:   #what about sites that don't have robots.txt?
-        print(f"An error occurred when connecting to ", site, " :", e)
+    except requests.exceptions.ConnectionError as e:  #SSL errors
+        print(f"Cannot connect to site ", site, " :", e)
         disallowed_sites.append(site)
         return
-        
 
     robots_response = robots_response.text.split("\n\n")  #get robots.txt text, and split into user-agent sections
 
@@ -59,16 +52,11 @@ def branch(site, current_depth = 0):
     available_urls = []
 
     response = requests.get(site).text              #get response from site
-
-
     soup = BeautifulSoup(response, 'html.parser')   #parse response
 
     for link in soup.find_all('a', attrs={'href': re.compile("^https://")}):    #find all a href tags
 
         link_url = link.get('href').replace("?", "/").split("/")
-        
-        # if (len(link_url) < 3 or link_url[2] == ""):
-        #     continue
 
         formatted_url = ("/".join(link_url[:3]) + "/").replace("www.", "")      #format url (remove www., keep everything up until (and including) top-level domain)
 
@@ -99,30 +87,11 @@ def build_matrix():
 
     global nodes
     global connections
-
-    # nodes = ['https://google.com/', 'https://maps.google.si/', 'https://play.google.com/', 'https://youtube.com/', 'https://google.si/', 
-    #                 'https://accounts.google.com/']
-
-    # connections = [['https://google.com/', 'https://maps.google.si/', 'https://play.google.com/', 'https://youtube.com/', 'https://news.google.com/', 
-    #               'https://mail.google.com/', 'https://drive.google.com/', 'https://google.si/', 'https://accounts.google.com/', 'https://google.com/'], 
-                 
-    #              ['https://accounts.google.com/', 'https://accounts.google.com/', 'https://policies.google.com/', 'https://consent.google.si/', 
-    #               'https://policies.google.com/', 'https://policies.google.com/'],
-
-    #              ['https://policies.google.com/', 'https://myaccount.google.com/', 'https://play.google.com/', 'https://support.google.com/', 
-    #               'https://support.google.com/', 'https://support.google.com/', 'https://play.google.com/', 'https://policies.google.com/', 
-    #               'https://support.google.com/', 'https://store.google.com/'], 
-
-    #              ['https://youtube.com/', 'https://youtube.com/', 'https://youtube.com/', 'https://youtube.com/', 'https://youtube.com/', 
-    #               'https://developers.google.com/', 'https://youtube.com/', 'https://youtube.com/'],
-
-    #              ['https://google.si/', 'https://maps.google.si/', 'https://play.google.com/', 'https://youtube.com/', 'https://news.google.com/', 
-    #               'https://mail.google.com/', 'https://drive.google.com/', 'https://google.si/', 'https://accounts.google.com/', 'https://google.si/'],
-
-    #              ['https://support.google.com/', 'https://support.google.com/', 'https://accounts.google.com/', 'https://accounts.google.com/']]
-
-
+    
     #add missing nodes to the node list
+    
+    #M must be a node x node matrix, and right now there might be some nodes in the connections list that aren't in the nodes list 
+    #(for example, nodes that we haven't visited because max depth was reached). That's why we add the missing nodes.
 
     for connection_list in connections:
         for url in connection_list:
@@ -197,7 +166,6 @@ if __name__ == "__main__":
         r0 = ranks
 
     print("Convergence achieved after ", iteration_counter, " iterations.\n")
-    print("Sum of ranks: ", sum(ranks))
 
 
     #sort by rank
